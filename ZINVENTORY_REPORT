@@ -1,0 +1,173 @@
+REPORT ZINVENTORY_REPORT.
+
+*DESCRIPTION- INVENTORY MANGEMENT SYSTEM
+
+TYPE-POOLS: SLIS.
+
+* Structure for inventory data
+TYPES: BEGIN OF TY_INVENTORY,
+         MATERIAL_ID   TYPE CHAR10,
+         MATERIAL_NAME TYPE CHAR40,
+         CATEGORY      TYPE CHAR20,
+         STOCK_QTY     TYPE I,
+         UNIT_PRICE    TYPE P DECIMALS 2,
+         TOTAL_VALUE   TYPE P DECIMALS 2,
+         CURRENCY      TYPE CHAR3,
+         STATUS        TYPE CHAR10,
+       END OF TY_INVENTORY.
+
+* Global Data
+DATA: GT_INVENTORY TYPE TABLE OF TY_INVENTORY,
+      GS_INVENTORY TYPE TY_INVENTORY.
+
+* ALV specific data
+DATA: GT_FIELDCAT TYPE SLIS_T_FIELDCAT_ALV,
+      GS_FIELDCAT TYPE SLIS_FIELDCAT_ALV,
+      GS_LAYOUT   TYPE SLIS_LAYOUT_ALV.
+
+* Input screen
+SELECTION-SCREEN BEGIN OF BLOCK B1 WITH FRAME TITLE TEXT-001.
+PARAMETERS: P_RECS TYPE I DEFAULT 10.
+SELECTION-SCREEN END OF BLOCK B1.
+
+* Main Logic
+START-OF-SELECTION.
+
+  PERFORM GET_DATA.
+  PERFORM PROCESS_DATA.
+  PERFORM BUILD_FIELDCAT.
+  PERFORM DISPLAY_ALV.
+
+*----------------------------------------------------------------------*
+* Form: GET_DATA
+* Description: Generate dummy data for testing
+*----------------------------------------------------------------------*
+FORM GET_DATA.
+  DATA: LV_INDEX TYPE I.
+
+  DO P_RECS TIMES.
+    LV_INDEX = SY-INDEX.
+
+    CLEAR GS_INVENTORY.
+
+    " Create dummy material ID
+    GS_INVENTORY-MATERIAL_ID = |MAT-{ LV_INDEX }|.
+
+    " Logic for random-ish numbers
+    GS_INVENTORY-STOCK_QTY = ( LV_INDEX * 5 ) + 2.
+    GS_INVENTORY-UNIT_PRICE = ( LV_INDEX * 100 ).
+    GS_INVENTORY-CURRENCY = 'INR'.
+
+    " Just splitting categories for variety
+    IF LV_INDEX MOD 2 = 0.
+      GS_INVENTORY-MATERIAL_NAME = 'Electronic Chipset'.
+      GS_INVENTORY-CATEGORY = 'Electronics'.
+    ELSE.
+      GS_INVENTORY-MATERIAL_NAME = 'Hydraulic Pump'.
+      GS_INVENTORY-CATEGORY = 'Mechanical'.
+    ENDIF.
+
+    APPEND GS_INVENTORY TO GT_INVENTORY.
+  ENDDO.
+ENDFORM.
+
+*----------------------------------------------------------------------*
+* Form: PROCESS_DATA
+* Description: Calculate totals and check status
+*----------------------------------------------------------------------*
+FORM PROCESS_DATA.
+
+  LOOP AT GT_INVENTORY INTO GS_INVENTORY.
+    " Calculate total value
+    GS_INVENTORY-TOTAL_VALUE = GS_INVENTORY-STOCK_QTY * GS_INVENTORY-UNIT_PRICE.
+
+    " Check stock status
+    IF GS_INVENTORY-STOCK_QTY < 10.
+      GS_INVENTORY-STATUS = 'CRITICAL'.
+    ELSEIF GS_INVENTORY-STOCK_QTY > 50.
+      GS_INVENTORY-STATUS = 'EXCESS'.
+    ELSE.
+      GS_INVENTORY-STATUS = 'NORMAL'.
+    ENDIF.
+
+    MODIFY GT_INVENTORY FROM GS_INVENTORY.
+  ENDLOOP.
+
+ENDFORM.
+
+*----------------------------------------------------------------------*
+* Form: BUILD_FIELDCAT
+* Description: Manually build the columns for ALV
+*----------------------------------------------------------------------*
+FORM BUILD_FIELDCAT.
+
+  CLEAR GS_FIELDCAT.
+  GS_FIELDCAT-FIELDNAME = 'MATERIAL_ID'.
+  GS_FIELDCAT-SELTEXT_M = 'Material ID'.
+  GS_FIELDCAT-COL_POS   = 1.
+  APPEND GS_FIELDCAT TO GT_FIELDCAT.
+
+  CLEAR GS_FIELDCAT.
+  GS_FIELDCAT-FIELDNAME = 'MATERIAL_NAME'.
+  GS_FIELDCAT-SELTEXT_M = 'Description'.
+  GS_FIELDCAT-COL_POS   = 2.
+  APPEND GS_FIELDCAT TO GT_FIELDCAT.
+
+  CLEAR GS_FIELDCAT.
+  GS_FIELDCAT-FIELDNAME = 'CATEGORY'.
+  GS_FIELDCAT-SELTEXT_M = 'Category'.
+  GS_FIELDCAT-COL_POS   = 3.
+  APPEND GS_FIELDCAT TO GT_FIELDCAT.
+
+  CLEAR GS_FIELDCAT.
+  GS_FIELDCAT-FIELDNAME = 'STOCK_QTY'.
+  GS_FIELDCAT-SELTEXT_M = 'Quantity'.
+  GS_FIELDCAT-COL_POS   = 4.
+  APPEND GS_FIELDCAT TO GT_FIELDCAT.
+
+  CLEAR GS_FIELDCAT.
+  GS_FIELDCAT-FIELDNAME = 'UNIT_PRICE'.
+  GS_FIELDCAT-SELTEXT_M = 'Unit Price'.
+  GS_FIELDCAT-COL_POS   = 5.
+  APPEND GS_FIELDCAT TO GT_FIELDCAT.
+
+  CLEAR GS_FIELDCAT.
+  GS_FIELDCAT-FIELDNAME = 'TOTAL_VALUE'.
+  GS_FIELDCAT-SELTEXT_M = 'Total Value'.
+  GS_FIELDCAT-COL_POS   = 6.
+  GS_FIELDCAT-DO_SUM    = 'X'. " Sum this column
+  APPEND GS_FIELDCAT TO GT_FIELDCAT.
+
+  CLEAR GS_FIELDCAT.
+  GS_FIELDCAT-FIELDNAME = 'STATUS'.
+  GS_FIELDCAT-SELTEXT_M = 'Stock Status'.
+  GS_FIELDCAT-COL_POS   = 7.
+  APPEND GS_FIELDCAT TO GT_FIELDCAT.
+
+ENDFORM.
+
+*----------------------------------------------------------------------*
+* Form: DISPLAY_ALV
+* Description: Show the final report
+*----------------------------------------------------------------------*
+FORM DISPLAY_ALV.
+
+  GS_LAYOUT-ZEBRA = 'X'.
+  GS_LAYOUT-COLWIDTH_OPTIMIZE = 'X'.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      I_CALLBACK_PROGRAM = SY-REPID
+      IS_LAYOUT          = GS_LAYOUT
+      IT_FIELDCAT        = GT_FIELDCAT
+    TABLES
+      T_OUTTAB           = GT_INVENTORY
+    EXCEPTIONS
+      PROGRAM_ERROR      = 1
+      OTHERS             = 2.
+
+  IF SY-SUBRC <> 0.
+    MESSAGE 'ALV Display Error' TYPE 'E'.
+  ENDIF.
+
+ENDFORM.
